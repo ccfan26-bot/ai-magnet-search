@@ -11,10 +11,7 @@ export async function POST(request) {
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "搜索关键词不能为空",
-        },
+        { success: false, error: "搜索关键词不能为空" },
         { status: 400 },
       );
     }
@@ -22,10 +19,11 @@ export async function POST(request) {
     console.log("收到搜索请求:", query);
 
     let aiUnderstanding = "";
-    let optimizedKeywords = query;
+    let optimizedKeywords = query.trim();
 
     if (process.env.POE_API_KEY) {
-      const aiPrompt = `
+      try {
+        const aiPrompt = `
 用户输入: "${query}"
 
 你是磁力搜索助手，请：
@@ -37,18 +35,21 @@ export async function POST(request) {
 理解：[你对用户需求的理解]
 关键词：[关键词1 关键词2]
 `;
-
-      const aiResponse = await callPoeAPI(aiPrompt);
-      aiUnderstanding = aiResponse;
-
-      // 提取关键词
-      const keywordMatch = aiResponse.match(/关键词[：:]\s*(.+)/);
-      if (keywordMatch) {
-        optimizedKeywords = keywordMatch[1].trim();
+        const aiResponse = await callPoeAPI(aiPrompt);
+        if (aiResponse) {
+          aiUnderstanding = aiResponse;
+          const keywordMatch = aiResponse.match(/关键词[：:]\s*(.+)/);
+          if (keywordMatch) {
+            optimizedKeywords = keywordMatch[1].trim();
+          }
+        }
+      } catch (aiError) {
+        // AI 分析失败不影响搜索继续
+        console.warn("AI 分析失败，使用原始关键词:", aiError.message);
       }
     }
 
-    const magnetResults = await searchMagnet(optimizedKeywords || query);
+    const magnetResults = await searchMagnet(optimizedKeywords);
 
     return NextResponse.json({
       success: true,
@@ -59,12 +60,8 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("搜索API错误:", error);
-
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "搜索失败，请稍后重试",
-      },
+      { success: false, error: error.message || "搜索失败，请稍后重试" },
       { status: 500 },
     );
   }

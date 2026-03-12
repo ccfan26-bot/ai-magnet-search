@@ -48,7 +48,6 @@
     }
   }
 
-  /* 文本截断 */
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;

@@ -1,388 +1,323 @@
-'use client';
+"use client";
 
-import { useState, useRef, useEffect } from 'react';
-import { Search, Loader2, Download, Copy, Send, Sparkles, MessageSquare } from 'lucide-react';
+import { useState } from "react";
 
 export default function Home() {
-  const [query, setQuery] = useState('');
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+  const [aiUnderstanding, setAiUnderstanding] = useState("");
+  const [chatMessage, setChatMessage] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [aiUnderstanding, setAiUnderstanding] = useState('');
-  const [showChat, setShowChat] = useState(false);
-  const chatEndRef = useRef(null);
-  const searchBoxRef = useRef(null);
+  const [activeTab, setActiveTab] = useState("search"); // 'search' | 'chat'
+  const [copyTip, setCopyTip] = useState(""); // 复制提示
 
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [chatMessages]);
-
-  const handleSearch = async (searchQuery) => {
-    const trimmedQuery = searchQuery?.trim();
-    if (!trimmedQuery) return;
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!query.trim()) return;
 
     setLoading(true);
     setResults([]);
-    setAiUnderstanding('');
-    setShowChat(false);
-    setChatMessages([]);
+    setAiUnderstanding("");
 
     try {
-      const response = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmedQuery }),
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
       });
+      const data = await res.json();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setResults(data.results);
-        setAiUnderstanding(data.aiUnderstanding);
-        setShowChat(true);
-        
-        // 初始化对话历史
-        setChatMessages([
-          {
-            role: 'assistant',
-            content: `${data.aiUnderstanding}\n\n我为你找到了 ${data.results.length} 个资源。你可以问我：\n• 哪个资源质量最好？\n• 推荐下载哪一个？\n• 这些资源有什么区别？`
-          }
-        ]);
-      } else {
-        throw new Error(data.error);
+      if (!data.success) {
+        throw new Error(data.error || "搜索失败");
       }
+
+      setAiUnderstanding(data.aiUnderstanding);
+      setResults(data.results);
+      setActiveTab("search");
+      // 搜索新内容时清空聊天历史
+      setChatHistory([]);
     } catch (error) {
-      console.error('搜索失败:', error);
-      alert('搜索失败: ' + error.message);
+      console.error("搜索失败:", error);
+      setAiUnderstanding(`搜索出错：${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChatSubmit = async (e) => {
+  const handleChat = async (e) => {
     e.preventDefault();
-    const message = chatInput.trim();
-    if (!message || chatLoading) return;
+    if (!chatMessage.trim()) return;
 
-    setChatInput('');
-    setChatMessages(prev => [...prev, { role: 'user', content: message }]);
-    setChatLoading(true);
+    const userMsg = { role: "user", content: chatMessage };
+    const updatedHistory = [...chatHistory, userMsg];
+    setChatHistory(updatedHistory);
+    setChatMessage("");
+    setLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message,
-          context: {
-            lastQuery: query,
-            results: results.map(r => ({
-              title: r.title,
-              size: r.size,
-              date: r.date,
-              source: r.source
-            })),
-            aiUnderstanding
-          }
+          message: chatMessage,
+          history: chatHistory, // ✅ 修复：传入聊天历史
+          context: { lastQuery: query, results },
         }),
       });
+      const data = await res.json();
 
-      const data = await response.json();
-      
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.response
-      }]);
+      if (data.error) throw new Error(data.error);
+
+      setChatHistory([
+        ...updatedHistory,
+        { role: "assistant", content: data.response },
+      ]);
     } catch (error) {
-      console.error('对话失败:', error);
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: '❌ 抱歉，我遇到了问题，请稍后重试'
-      }]);
+      console.error("对话失败:", error);
+      setChatHistory([
+        ...updatedHistory,
+        {
+          role: "assistant",
+          content: `出错了：${error.message}，请稍后重试。`,
+        },
+      ]);
     } finally {
-      setChatLoading(false);
+      setLoading(false);
     }
   };
 
-  const copyMagnet = (magnet) => {
-    navigator.clipboard.writeText(magnet);
-    const notification = document.createElement('div');
-    notification.className = 'fixed top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-8 py-4 rounded-2xl shadow-2xl z-[100] animate-slide-down flex items-center gap-3 font-medium';
-    notification.innerHTML = `
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-      </svg>
-      <span>磁力链接已复制到剪贴板</span>
-    `;
-    document.body.appendChild(notification);
-    setTimeout(() => {
-      notification.classList.add('animate-slide-up');
-      setTimeout(() => notification.remove(), 300);
-    }, 2500);
+  // ✅ 修复：复制后有提示反馈，alert 体验差
+  const handleCopy = (magnet, index) => {
+    navigator.clipboard.writeText(magnet).then(() => {
+      setCopyTip(index);
+      setTimeout(() => setCopyTip(""), 2000);
+    });
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
-      
-      {/* 背景装饰 */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/10 rounded-full blur-3xl"></div>
-      </div>
-
-      {/* 主容器 */}
-      <div className="relative z-10 min-h-screen flex flex-col">
-        
-        {/* 头部区域 */}
-        <div className={`flex-shrink-0 transition-all duration-700 ${results.length > 0 ? 'pt-12 pb-8' : 'pt-32 pb-16'}`}>
-          <div className="container mx-auto px-6 max-w-5xl">
-            
-            {/* Logo 和标题 */}
-            <div className={`text-center mb-12 transition-all duration-700 ${results.length > 0 ? 'scale-90' : 'scale-100'}`}>
-              <div className="flex items-center justify-center gap-4 mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-2xl animate-float">
-                  <Sparkles className="text-white" size={32} />
-                </div>
-                <h1 className="text-7xl font-black">
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400">
-                    MagnetAI
-                  </span>
-                </h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* 头部 */}
+      <header className="backdrop-blur-md bg-white/10 border-b border-white/10 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
+                <span className="text-2xl">🧲</span>
               </div>
-              <p className="text-gray-300 text-xl font-light">
-                AI 驱动的智能磁力搜索引擎
-              </p>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                MagnetAI
+              </h1>
             </div>
-
-            {/* 超大搜索框 */}
-            <div ref={searchBoxRef} className="relative group">
-              <form 
-                onSubmit={(e) => { 
-                  e.preventDefault(); 
-                  handleSearch(query); 
-                }} 
-              >
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="描述你想要的资源，例如：4K 周星驰电影合集..."
-                    className="w-full px-8 py-7 pr-24 text-xl bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-3xl text-white placeholder-gray-400 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/30 outline-none transition-all shadow-2xl group-hover:shadow-purple-500/20"
-                    disabled={loading}
-                  />
-                  <button
-                    type="submit"
-                    disabled={loading || !query.trim()}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-2xl hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-2"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="animate-spin" size={24} />
-                        <span>搜索中</span>
-                      </>
-                    ) : (
-                      <>
-                        <Search size={24} />
-                        <span>搜索</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-
-              {/* 搜索提示 */}
-              {!results.length && !loading && (
-                <div className="mt-6 flex flex-wrap gap-3 justify-center">
-                  {['周星驰电影 4K', 'Python 入门教程', '权力的游戏 全集', '红楼梦 有声书'].map((tip, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setQuery(tip)}
-                      className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-gray-300 hover:text-white transition-all text-sm backdrop-blur-sm hover:scale-105"
-                    >
-                      {tip}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <div className="text-sm text-purple-300">AI 驱动的磁力搜索</div>
           </div>
         </div>
+      </header>
 
-        {/* 搜索结果区域 */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 搜索框 */}
+        <div className="mb-8">
+          <form onSubmit={handleSearch} className="relative">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="输入关键词，AI 帮你找到最佳资源..."
+              className="w-full px-6 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "🔍 搜索中..." : "🚀 搜索"}
+            </button>
+          </form>
+        </div>
+
+        {/* AI 理解 */}
+        {aiUnderstanding && (
+          <div className="mb-6 p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-md border border-purple-500/30 rounded-xl">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <p className="text-sm text-purple-300 font-medium mb-1">
+                  AI 分析
+                </p>
+                <p className="text-white whitespace-pre-wrap">
+                  {aiUnderstanding}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 无结果提示 */}
+        {!loading && aiUnderstanding && results.length === 0 && (
+          <div className="mb-6 text-center text-purple-300 py-12">
+            <p className="text-4xl mb-3">😕</p>
+            <p>未找到相关资源，换个关键词试试？</p>
+          </div>
+        )}
+
+        {/* Tab 切换 */}
         {results.length > 0 && (
-          <div className="flex-1 pb-8">
-            <div className="container mx-auto px-6 max-w-5xl">
-              
-              {/* 结果统计 */}
-              <div className="mb-8 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl font-bold">{results.length}</span>
+          <div className="mb-6 flex space-x-2 bg-white/5 backdrop-blur-md p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setActiveTab("search")}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === "search"
+                  ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                  : "text-purple-300 hover:text-white"
+              }`}
+            >
+              📋 搜索结果 ({results.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === "chat"
+                  ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                  : "text-purple-300 hover:text-white"
+              }`}
+            >
+              💬 AI 对话
+            </button>
+          </div>
+        )}
+
+        {/* 内容区域 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 搜索结果 */}
+          {activeTab === "search" && results.length > 0 && (
+            <div className="lg:col-span-2 space-y-4">
+              {results.map((result, index) => (
+                <div
+                  key={index}
+                  className="p-5 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/15 hover:border-purple-500/50 transition-all group"
+                >
+                  <h3 className="text-lg font-semibold text-white mb-3 group-hover:text-purple-300 transition-colors">
+                    {result.title}
+                  </h3>
+                  <div className="flex flex-wrap gap-3 text-sm text-purple-300 mb-4">
+                    <span className="flex items-center gap-1">
+                      💾 {result.size}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      📅 {result.date}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      🌐 {result.source}
+                    </span>
                   </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-white">找到 {results.length} 个资源</h2>
-                    <p className="text-gray-400 text-sm mt-1">已为你筛选出最优结果</p>
-                  </div>
+                  {/* ✅ 修复：复制后显示 "已复制！" 反馈，取代 alert */}
+                  <button
+                    onClick={() => handleCopy(result.magnet, index)}
+                    className="w-full px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500 hover:to-pink-500 border border-purple-500/30 hover:border-transparent rounded-lg text-purple-300 hover:text-white font-medium transition-all"
+                  >
+                    {copyTip === index ? "✅ 已复制！" : "📋 复制磁力链接"}
+                  </button>
                 </div>
-              </div>
-
-              {/* 结果列表 */}
-              <div className="space-y-4 mb-8">
-                {results.map((result, index) => (
-                  <div 
-                    key={index} 
-                    className="group bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl hover:bg-white/10 hover:border-purple-500/50 transition-all hover:shadow-2xl hover:shadow-purple-500/20 hover:-translate-y-1"
-                  >
-                    {/* 序号和标题 */}
-                    <div className="flex items-start gap-4 mb-4">
-                      <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center font-bold text-white shadow-lg">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-purple-300 transition-colors">
-                          {result.title}
-                        </h3>
-                        
-                        {/* 元信息 */}
-                        <div className="flex flex-wrap gap-4 text-sm">
-                          <span className="flex items-center gap-2 text-gray-300">
-                            <span className="text-xl">📦</span>
-                            <span className="font-medium">{result.size}</span>
-                          </span>
-                          <span className="flex items-center gap-2 text-gray-300">
-                            <span className="text-xl">📅</span>
-                            <span>{result.date}</span>
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <span className="text-xl">🔗</span>
-                            <span className="text-purple-400 font-medium">{result.source}</span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* 操作按钮 */}
-                    <div className="flex gap-3 ml-14">
-                      <button
-                        onClick={() => copyMagnet(result.magnet)}
-                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-xl hover:shadow-purple-500/50 transition-all font-semibold hover:scale-105"
-                      >
-                        <Copy size={18} />
-                        复制链接
-                      </button>
-                      <a
-                        href={result.magnet}
-                        className="flex items-center gap-2 px-6 py-3 bg-white/10 border border-white/20 text-white rounded-xl hover:bg-white/20 hover:border-white/40 transition-all font-semibold hover:scale-105"
-                      >
-                        <Download size={18} />
-                        立即下载
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 加载状态 */}
-        {loading && (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="relative w-24 h-24 mx-auto mb-6">
-                <Loader2 className="w-24 h-24 text-purple-500 animate-spin" />
-                <div className="absolute inset-0 bg-purple-500/20 rounded-full blur-xl animate-pulse"></div>
-              </div>
-              <p className="text-2xl text-white font-semibold mb-2">AI 正在搜索中...</p>
-              <p className="text-gray-400">请稍候，为你找最好的资源</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 底部对话框 */}
-      {showChat && (
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-2xl border-t-2 border-white/10 shadow-2xl z-50">
-          <div className="container mx-auto max-w-5xl">
-            
-            {/* 对话历史 */}
-            <div className="max-h-96 overflow-y-auto px-6 py-6">
-              <div className="space-y-4">
-                {chatMessages.map((msg, index) => (
-                  <div 
-                    key={index} 
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          {/* AI 对话 */}
+          {activeTab === "chat" && (
+            <div className="lg:col-span-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6">
+              <div className="h-96 overflow-y-auto mb-4 space-y-4">
+                {chatHistory.length === 0 && (
+                  <p className="text-center text-purple-400 mt-8">
+                    👋 你好！有什么我可以帮你分析的？
+                  </p>
+                )}
+                {chatHistory.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    <div 
-                      className={`max-w-[80%] px-6 py-4 rounded-2xl shadow-xl ${
-                        msg.role === 'user' 
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
-                          : 'bg-white/10 backdrop-blur-xl text-gray-100 border border-white/20'
+                    <div
+                      className={`max-w-[80%] px-4 py-3 rounded-2xl whitespace-pre-wrap ${
+                        msg.role === "user"
+                          ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                          : "bg-white/10 text-purple-100"
                       }`}
                     >
-                      {msg.role === 'assistant' && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <Sparkles size={16} className="text-purple-400" />
-                          <span className="text-xs font-semibold text-purple-400">AI 助手</span>
-                        </div>
-                      )}
-                      <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      {msg.content}
                     </div>
                   </div>
                 ))}
-                {chatLoading && (
+                {/* 加载中气泡 */}
+                {loading && activeTab === "chat" && (
                   <div className="flex justify-start">
-                    <div className="bg-white/10 backdrop-blur-xl px-6 py-4 rounded-2xl border border-white/20">
-                      <Loader2 className="animate-spin text-purple-400" size={20} />
+                    <div className="px-4 py-3 bg-white/10 text-purple-300 rounded-2xl">
+                      ✍️ AI 正在思考...
                     </div>
                   </div>
                 )}
               </div>
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* 输入区域 */}
-            <div className="px-6 py-6 border-t border-white/10">
-              <form onSubmit={handleChatSubmit} className="flex gap-4">
-                <div className="flex-1 relative">
-                  <MessageSquare className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={22} />
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="问问 AI，或描述新的搜索需求..."
-                    className="w-full pl-14 pr-6 py-5 text-lg bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-2xl text-white placeholder-gray-400 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/30 outline-none transition-all"
-                    disabled={chatLoading}
-                  />
-                </div>
-                
+              <form onSubmit={handleChat} className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  placeholder="问 AI 任何问题..."
+                  className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
                 <button
                   type="submit"
-                  disabled={chatLoading || !chatInput.trim()}
-                  className="px-8 py-5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-2xl hover:shadow-2xl hover:shadow-purple-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-3"
+                  disabled={loading || !chatMessage.trim()}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-xl text-white font-medium transition-all disabled:opacity-50"
                 >
-                  {chatLoading ? (
-                    <Loader2 className="animate-spin" size={24} />
-                  ) : (
-                    <>
-                      <Send size={24} />
-                      <span>发送</span>
-                    </>
-                  )}
+                  发送
                 </button>
               </form>
             </div>
-          </div>
+          )}
+
+          {/* 侧边栏 - 快捷提示 */}
+          {results.length > 0 && (
+            <div className="space-y-4">
+              <div className="p-5 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl">
+                <h3 className="text-lg font-semibold text-white mb-3">
+                  💡 快速提问
+                </h3>
+                <div className="space-y-2">
+                  {[
+                    "推荐哪个资源？",
+                    "文件大小对比",
+                    "最新是哪个？",
+                    "画质最好的是？",
+                  ].map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => {
+                        setChatMessage(q);
+                        setActiveTab("chat");
+                      }}
+                      className="w-full px-4 py-2 bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/30 rounded-lg text-purple-300 hover:text-white text-sm transition-all text-left"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 搜索统计 */}
+              <div className="p-5 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl">
+                <h3 className="text-lg font-semibold text-white mb-3">
+                  📊 搜索统计
+                </h3>
+                <p className="text-purple-300 text-sm">
+                  共找到{" "}
+                  <span className="text-white font-bold">{results.length}</span>{" "}
+                  个资源
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </main>
     </div>
   );
 }
