@@ -1,3 +1,7 @@
+// app/api/search/route.js
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { callPoeAPI } from "@/lib/poe-client";
 import { searchMagnet } from "@/lib/crawler";
@@ -74,6 +78,3 @@ export async function POST(request) {
     );
   }
 }
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
