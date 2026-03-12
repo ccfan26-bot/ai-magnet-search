@@ -1,40 +1,43 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+import Anthropic from "@anthropic-ai/sdk";
 
-import { NextResponse } from "next/server";
-import { callPoeAPI } from "@/lib/poe-client";
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export async function POST(request) {
   try {
     const { message, context } = await request.json();
 
-    const prompt = `
-你是AI磁力搜索助手。用户正在与你对话。
+    const systemPrompt = `你是 MagnetAI 的智能助手。用户刚刚搜索了"${context.lastQuery}"，找到了 ${context.results?.length || 0} 个资源。
 
-上下文信息：
-- 上次搜索关键词: ${context.lastQuery || "无"}
-- 搜索结果数量: ${context.resultsCount || 0}
-- AI理解: ${context.aiUnderstanding || "无"}
+当前搜索结果：
+${context.results
+  ?.slice(0, 5)
+  .map(
+    (r, i) =>
+      `${i + 1}. ${r.title}\n   大小: ${r.size} | 日期: ${r.date} | 来源: ${r.source}`,
+  )
+  .join("\n\n")}
 
-用户新消息: "${message}"
+请根据用户的问题，提供专业、友好的回答。如果用户问推荐，请分析文件大小、日期、标题等信息给出建议。`;
 
-请根据上下文回答用户的问题。如果用户想重新搜索，提取关键词并告知。保持简洁友好。
-`;
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: message,
+        },
+      ],
+      system: systemPrompt,
+    });
 
-    const response = await callPoeAPI(prompt);
-
-    return NextResponse.json({
-      success: true,
-      response: response || "抱歉，我暂时无法理解你的问题，请换个方式描述。",
+    return Response.json({
+      response: response.content[0].text,
     });
   } catch (error) {
-    console.error("对话API错误:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
-      { status: 500 },
-    );
+    console.error("Chat API 错误:", error);
+    return Response.json({ error: "对话失败，请稍后重试" }, { status: 500 });
   }
 }
