@@ -1,4 +1,3 @@
-// app/api/search/route.js
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -22,46 +21,38 @@ export async function POST(request) {
 
     console.log("收到搜索请求:", query);
 
-    // AI 理解用户意图
     let aiUnderstanding = "";
     let optimizedKeywords = query;
 
     if (process.env.POE_API_KEY) {
       const aiPrompt = `
-你是磁力搜索助手。用户输入: "${query}"
+用户输入: "${query}"
 
-分析用户意图并提取核心关键词：
-1. 影视作品: 提取片名+年份/季度（如"破晓2024"、"权力的游戏S08"）
-2. 软件/游戏: 提取名称+版本号（如"Photoshop2024"）
-3. 去除"下载"、"资源"、"最新"等无用词
-4. 返回2-3个优化后的关键词，用空格分隔
+你是磁力搜索助手，请：
+1. 理解用户意图
+2. 提取2-3个核心搜索关键词
+3. 给出友好的理解说明
 
-只返回关键词，不要其他内容。
+格式：
+理解：[你对用户需求的理解]
+关键词：[关键词1 关键词2]
 `;
 
-      aiUnderstanding = await callPoeAPI(aiPrompt);
+      const aiResponse = await callPoeAPI(aiPrompt);
+      aiUnderstanding = aiResponse;
 
-      // 提取 AI 返回的关键词
-      if (aiUnderstanding && aiUnderstanding.trim().length > 0) {
-        const keywordMatch = aiUnderstanding.match(
-          /[a-zA-Z0-9\u4e00-\u9fa5]+/g,
-        );
-        if (keywordMatch && keywordMatch.length > 0) {
-          optimizedKeywords = keywordMatch.slice(0, 3).join(" ");
-        }
+      // 提取关键词
+      const keywordMatch = aiResponse.match(/关键词[：:]\s*(.+)/);
+      if (keywordMatch) {
+        optimizedKeywords = keywordMatch[1].trim();
       }
-
-      console.log("AI优化后的关键词:", optimizedKeywords);
-    } else {
-      console.warn("⚠️ 未配置 POE_API_KEY，跳过 AI 理解");
     }
 
-    // 执行磁力搜索
     const magnetResults = await searchMagnet(optimizedKeywords || query);
 
     return NextResponse.json({
       success: true,
-      aiUnderstanding: aiUnderstanding || `搜索: ${query}`,
+      aiUnderstanding: aiUnderstanding || `正在搜索: ${query}`,
       optimizedKeywords,
       results: magnetResults,
       total: magnetResults.length,
